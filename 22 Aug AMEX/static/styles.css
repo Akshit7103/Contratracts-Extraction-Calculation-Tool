@@ -1,0 +1,85 @@
+
+:root {
+  --bg: #0b0f19;
+  --panel: #12182a;
+  --text: #e8ecf1;
+  --muted: #9db0c9;
+  --accent: #68b2ff;
+  --error: #ff6b6b;
+  --ok: #38d39f;
+}
+
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container {
+  max-width: 900px;
+  margin: 32px auto;
+  padding: 0 16px;
+}
+
+h1 { font-weight: 800; letter-spacing: -0.02em; }
+h2 { margin-top: 24px; }
+legend { font-weight: 700; color: var(--muted); }
+label { display:block; margin-bottom: 6px; color: var(--muted); }
+input[type="text"], input[type="file"] {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid #1e2741;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+input[type="file"] { padding: 10px; }
+button {
+  margin-top: 16px;
+  background: var(--accent);
+  color: #00122a;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:hover { filter: brightness(1.05); }
+
+fieldset {
+  border: 1px solid #1e2741;
+  padding: 16px;
+  margin: 16px 0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.0));
+}
+
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.grid.two { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 800px) {
+  .grid, .grid.two { grid-template-columns: 1fr; }
+}
+
+.messages .msg { padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; }
+.msg.error { background: rgba(255,107,107,0.1); border: 1px solid var(--error); }
+.msg.info  { background: rgba(104,178,255,0.1); border: 1px solid var(--accent); }
+.msg.ok    { background: rgba(56,211,159,0.1); border: 1px solid var(--ok); }
+
+footer { margin-top: 24px; color: var(--muted); }
+
+.card {
+  background: var(--panel);
+  border: 1px solid #1e2741;
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.big { font-size: 1.8rem; font-weight: 800; }
+
+ul.tiers { list-style: none; padding-left: 0; }
+ul.tiers li { padding: 6px 8px; background: #101629; border: 1px solid #1e2741; border-radius: 10px; margin-bottom: 6px; }
+
+pre { background: #0f1426; padding: 10px; border-radius: 10px; overflow: auto; border: 1px solid #1e2741; }
+
+.help { color: var(--muted); font-size: 0.9rem; }
+
+.warn { color: var(--error); }

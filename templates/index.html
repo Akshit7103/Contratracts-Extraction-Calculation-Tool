@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unified Incentive Calculator</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Unified Incentive Calculator</h1>
+    <p>Choose your calculation method and upload your files. The app supports two calculation types:</p>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('index') }}" method="post" enctype="multipart/form-data" class="card">
+      
+      <div class="file-upload-section">
+        <h2>File Uploads</h2>
+        <label for="excel_file">Excel calculation file</label>
+        <input type="file" id="excel_file" name="excel_file" accept=".xlsx,.xls,.xlsm,.xlsb" required>
+
+        <label for="contract_file">Contract (.docx)</label>
+        <input type="file" id="contract_file" name="contract_file" accept=".docx" required>
+        
+        <button type="button" id="analyze-btn" class="analyze-button" disabled>
+          <span class="analyze-text">Analyze Files</span>
+          <span class="analyze-spinner" style="display: none;">🔄 Analyzing...</span>
+        </button>
+      </div>
+
+      <div class="calculation-type-section" style="display: none;" id="calculation-type-section">
+        <h2>Select Calculation Type</h2>
+        
+        <!-- Detection Result Display -->
+        <div id="detection-result" class="detection-result" style="display: none;">
+          <div class="detection-header">
+            <span class="detection-icon">🤖</span>
+            <span class="detection-title">Auto-Detection Result</span>
+            <span class="confidence-badge" id="confidence-badge"></span>
+          </div>
+          <div class="detection-details">
+            <p id="detection-reasoning"></p>
+            <p id="contract-validation" class="contract-validation"></p>
+          </div>
+        </div>
+        
+        <div class="radio-group">
+          <label class="radio-option" id="cv-tier-option">
+            <input type="radio" name="calculation_type" value="cv_tier" id="cv-tier-radio">
+            <div class="option-content">
+              <strong>CV Tier Based</strong> - CV Tier/Lo-ROC calculations with BIR basis points
+              <small>Detects CV Tier and Lo-ROC rows, applies BIR rates from contract</small>
+            </div>
+          </label>
+          <label class="radio-option" id="nacv-option">
+            <input type="radio" name="calculation_type" value="nacv_based" id="nacv-radio">
+            <div class="option-content">
+              <strong>NACV Based</strong> - NACV calculations with CHD adjustments  
+              <small>Calculates NACV from Bus/AR/Writeoff data with optional CHD performance adjustments</small>
+            </div>
+          </label>
+        </div>
+        
+        <div class="manual-override-note">
+          <small>💡 Auto-detected based on your files. You can change the selection if needed.</small>
+        </div>
+      </div>
+
+      <div class="chd-section" style="display: none;" id="chd-section">
+        <h2>CHD Performance (Optional)</h2>
+        <label for="chd_value">CHD Performance value</label>
+        <input type="number" step="0.01" id="chd_value" name="chd_value" placeholder="e.g., 5.46 or 15.5">
+        <small class="help-text">For CV Tier: displays CHD benchmark vs input. For NACV: applies CHD adjustments per contract rules.</small>
+      </div>
+
+      <button type="submit" id="process-btn" style="display: none;" disabled>Process</button>
+    </form>
+
+    <footer>
+      <p class="muted">Both calculation methods auto-detect data patterns and extract contract rules without hardcoding.</p>
+    </footer>
+  </div>
+
+  <script>
+    // Auto-detection functionality
+    const excelFile = document.getElementById('excel_file');
+    const contractFile = document.getElementById('contract_file');
+    const analyzeBtn = document.getElementById('analyze-btn');
+    const processBtn = document.getElementById('process-btn');
+    const calculationTypeSection = document.getElementById('calculation-type-section');
+    const chdSection = document.getElementById('chd-section');
+    const detectionResult = document.getElementById('detection-result');
+    
+    // Enable analyze button when both files are selected
+    function checkFilesSelected() {
+      const bothSelected = excelFile.files.length > 0 && contractFile.files.length > 0;
+      analyzeBtn.disabled = !bothSelected;
+      
+      // Hide sections when files change
+      if (!bothSelected) {
+        calculationTypeSection.style.display = 'none';
+        chdSection.style.display = 'none';
+        processBtn.style.display = 'none';
+        detectionResult.style.display = 'none';
+      }
+    }
+    
+    excelFile.addEventListener('change', checkFilesSelected);
+    contractFile.addEventListener('change', checkFilesSelected);
+    
+    // Analyze files
+    analyzeBtn.addEventListener('click', async function() {
+      const analyzeText = document.querySelector('.analyze-text');
+      const analyzeSpinner = document.querySelector('.analyze-spinner');
+      
+      // Show spinner
+      analyzeText.style.display = 'none';
+      analyzeSpinner.style.display = 'inline';
+      analyzeBtn.disabled = true;
+      
+      try {
+        const formData = new FormData();
+        formData.append('excel_file', excelFile.files[0]);
+        formData.append('contract_file', contractFile.files[0]);
+        
+        const response = await fetch('/analyze-files', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          displayDetectionResult(result.detection, result.contract_validation);
+        } else {
+          showError(result.error);
+        }
+      } catch (error) {
+        showError('Analysis failed: ' + error.message);
+      } finally {
+        // Hide spinner
+        analyzeText.style.display = 'inline';
+        analyzeSpinner.style.display = 'none';
+        analyzeBtn.disabled = false;
+      }
+    });
+    
+    function displayDetectionResult(detection, contractValidation) {
+      // Show sections
+      calculationTypeSection.style.display = 'block';
+      chdSection.style.display = 'block';
+      detectionResult.style.display = 'block';
+      processBtn.style.display = 'block';
+      processBtn.disabled = false;
+      
+      // Update detection display
+      const confidenceBadge = document.getElementById('confidence-badge');
+      const detectionReasoning = document.getElementById('detection-reasoning');
+      const contractValidationEl = document.getElementById('contract-validation');
+      
+      // Set confidence badge
+      confidenceBadge.textContent = detection.confidence.toUpperCase();
+      confidenceBadge.className = `confidence-badge confidence-${detection.confidence}`;
+      
+      // Set reasoning
+      detectionReasoning.textContent = detection.reasoning;
+      
+      // Set contract validation
+      if (contractValidation.contract_reasoning) {
+        contractValidationEl.textContent = `Contract analysis: ${contractValidation.contract_reasoning}`;
+        contractValidationEl.style.display = 'block';
+      } else {
+        contractValidationEl.style.display = 'none';
+      }
+      
+      // Select the detected type
+      const cvTierRadio = document.getElementById('cv-tier-radio');
+      const nacvRadio = document.getElementById('nacv-radio');
+      const cvTierOption = document.getElementById('cv-tier-option');
+      const nacvOption = document.getElementById('nacv-option');
+      
+      if (detection.detected_type === 'cv_tier') {
+        cvTierRadio.checked = true;
+        cvTierOption.classList.add('detected');
+        nacvOption.classList.remove('detected');
+      } else if (detection.detected_type === 'nacv_based') {
+        nacvRadio.checked = true;
+        nacvOption.classList.add('detected');
+        cvTierOption.classList.remove('detected');
+      } else {
+        // Unknown - don't pre-select, let user choose
+        cvTierRadio.checked = true; // Default to CV Tier
+        cvTierOption.classList.remove('detected');
+        nacvOption.classList.remove('detected');
+      }
+    }
+    
+    function showError(message) {
+      detectionResult.style.display = 'block';
+      detectionResult.innerHTML = `
+        <div class="detection-header error">
+          <span class="detection-icon">⚠️</span>
+          <span class="detection-title">Analysis Error</span>
+        </div>
+        <div class="detection-details">
+          <p>${message}</p>
+          <p>Please select the calculation type manually.</p>
+        </div>
+      `;
+      
+      // Still show the selection options
+      calculationTypeSection.style.display = 'block';
+      chdSection.style.display = 'block';
+      processBtn.style.display = 'block';
+      processBtn.disabled = false;
+      
+      // Default to CV Tier
+      document.getElementById('cv-tier-radio').checked = true;
+    }
+    
+    // Enable process button when calculation type is selected
+    document.querySelectorAll('input[name="calculation_type"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        processBtn.disabled = false;
+      });
+    });
+  </script>
+</body>
+</html>

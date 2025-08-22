@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Results — CV Incentive Tool</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Results</h1>
+
+    <section class="card">
+      <h2>CHD Summary</h2>
+      <table>
+        <thead>
+          <tr><th>CHD Benchmark (from Contract)</th><th>Your CHD (input)</th><th>Difference (CHD - Benchmark)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="num">{{ chd_benchmark_display }}</td>
+            <td class="num">{{ chd_input_display }}</td>
+            <td class="num">{{ chd_diff_display }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted">The benchmark is extracted from the .docx automatically; your CHD is optional input. No CHD-based incentives are calculated at this step.</p>
+    </section>
+
+    <section class="card">
+      <h2>Totals by CV Tier / Lo-ROC</h2>
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          {% for row in totals_view %}
+          <tr>
+            <td>{{ row.category }}</td>
+            <td class="num">{{ row.total }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>BIR Table (from Contract)</h2>
+      <table>
+        <thead>
+          <tr><th>NACV Range (USD MM)</th><th>BIR (bp)</th></tr>
+        </thead>
+        <tbody>
+          {% for row in bir_view %}
+          <tr>
+            <td>{{ row.range }}</td>
+            <td class="num">{{ row.bps }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted">Parsed directly from the .docx (no hardcoding).</p>
+    </section>
+
+    <section class="card">
+      <h2>Per-Tier Adjustments</h2>
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Total</th><th>BIR</th><th>Rate</th><th>Adjustment</th></tr>
+        </thead>
+        <tbody>
+          {% for row in adj_view %}
+          <tr>
+            <td>{{ row.category }}</td>
+            <td class="num">{{ row.total }}</td>
+            <td class="num">{{ row.bps }}</td>
+            <td class="num">{{ row.rate }}</td>
+            <td class="num">{{ row.adjustment }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th colspan="4" class="right">Total Gross Incentive</th>
+            <th class="num">{{ total_gross }}</th>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+
+    <a href="{{ url_for('index') }}" class="button">Process another file</a>
+  </div>
+</body>
+</html>
