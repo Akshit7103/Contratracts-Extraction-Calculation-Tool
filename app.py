@@ -8,6 +8,14 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 from werkzeug.utils import secure_filename
 from docx import Document
 
+# Import enhanced document processor
+try:
+    from enhanced_document_processor import EnhancedDocumentProcessor
+    ENHANCED_PROCESSING = True
+except ImportError as e:
+    print(f"Enhanced processing not available: {e}")
+    ENHANCED_PROCESSING = False
+
 ALLOWED_EXCEL = {"xls", "xlsx", "xlsm", "xlsb"}
 ALLOWED_WORD = {"docx"}
 
@@ -30,12 +38,25 @@ def format_currency(v: Optional[float]) -> str:
 
 def extract_chd_rules_from_docx(docx_path: str):
     """Extract CHD (Client Held Day) rules from Word contract"""
+    # Try enhanced processing first if available
+    if ENHANCED_PROCESSING and enhanced_processor:
+        try:
+            enhanced_result = enhanced_processor.extract_context_aware_chd_rules(docx_path)
+            if enhanced_result.get("confidence", 0) > 0.5:
+                return enhanced_result
+        except Exception as e:
+            print(f"Enhanced CHD extraction failed, falling back to standard: {e}")
+    
+    # Fallback to standard processing
     doc = Document(docx_path)
     chd_rules = {
         "threshold_days": None,
         "adjustment_bps_per_day": None,
         "description": "",
-        "adjustment_type": None  # "deduct" or "add"
+        "adjustment_type": None,  # "deduct" or "add"
+        "confidence": 0.0,
+        "context_analysis": {},
+        "matches_found": 0
     }
     
     # Search for CHD rules in paragraphs
@@ -380,7 +401,7 @@ def format_currency_gbp(v):
 def detect_calculation_type(excel_path: str) -> Dict:
     """
     Auto-detect whether the Excel file is CV Tier-based or NACV-based
-    Priority: Look for 'tier' keyword first for tier-based detection
+    Uses enhanced processing with fuzzy matching when available
     Returns: {
         'detected_type': 'cv_tier' | 'nacv_based' | 'unknown',
         'confidence': 'high' | 'medium' | 'low',
@@ -388,6 +409,31 @@ def detect_calculation_type(excel_path: str) -> Dict:
         'indicators': ['list', 'of', 'found', 'indicators']
     }
     """
+    # Try enhanced processing first if available
+    if ENHANCED_PROCESSING and enhanced_processor:
+        try:
+            enhanced_result = enhanced_processor.enhanced_excel_detection(excel_path)
+            if enhanced_result['detected_type'] != 'unknown':
+                # Convert numeric confidence to categorical
+                confidence_num = enhanced_result.get('confidence', 0)
+                if confidence_num > 0.8:
+                    confidence_cat = 'high'
+                elif confidence_num > 0.6:
+                    confidence_cat = 'medium'
+                else:
+                    confidence_cat = 'low'
+                
+                return {
+                    'detected_type': enhanced_result['detected_type'],
+                    'confidence': confidence_cat,
+                    'reasoning': enhanced_result['reasoning'],
+                    'indicators': [match.match for match in enhanced_result.get('fuzzy_matches', [])],
+                    'enhanced_data': enhanced_result  # Include additional data
+                }
+        except Exception as e:
+            print(f"Enhanced Excel detection failed, falling back to standard: {e}")
+    
+    # Fallback to standard processing
     try:
         df = pd.read_excel(excel_path, engine="openpyxl", header=None)
         first_column = df.iloc[:, 0].astype(str).str.lower().fillna('')
@@ -564,10 +610,20 @@ def _num(text: str) -> Optional[float]:
 def extract_bir_table_from_contract(docx_path: str) -> List[Dict]:
     """
     Extracts a BIR (basis points) table from the contract .docx.
-    Looks for a table whose header mentions NACV/CC-NACV/Charge Volume and bp/BIR.
+    Uses enhanced table structure recognition and fuzzy matching when available.
     Returns list of dicts: [{'lower_m': float, 'upper_m': Optional[float], 'bps': float}, ...]
     Units: 'lower_m' and 'upper_m' are in MILLIONS; 'bps' is basis points (1bp = 0.01%).
     """
+    # Try enhanced processing first if available
+    if ENHANCED_PROCESSING and enhanced_processor:
+        try:
+            enhanced_result = enhanced_processor.extract_enhanced_bir_table(docx_path)
+            if enhanced_result:  # If any results found
+                return enhanced_result
+        except Exception as e:
+            print(f"Enhanced BIR extraction failed, falling back to standard: {e}")
+    
+    # Fallback to standard processing
     doc = Document(docx_path)
     tiers = []
 
@@ -662,6 +718,84 @@ def extract_chd_benchmark_from_contract(docx_path: str) -> Optional[float]:
                     return v
 
     return None
+
+def extract_all_contract_terms(docx_path: str) -> Dict:
+    """
+    Extract all contract terms including CHD rules, BIR tables, and other terms
+    """
+    extracted_terms = {
+        "filename": os.path.basename(docx_path),
+        "chd_rules": None,
+        "chd_benchmark": None,
+        "bir_table": [],
+        "nacv_tiers": [],
+        "general_terms": [],
+        "extraction_summary": {}
+    }
+    
+    try:
+        # Extract CHD rules
+        extracted_terms["chd_rules"] = extract_chd_rules_from_docx(docx_path)
+        
+        # Extract CHD benchmark
+        extracted_terms["chd_benchmark"] = extract_chd_benchmark_from_contract(docx_path)
+        
+        # Extract BIR table 
+        extracted_terms["bir_table"] = extract_bir_table_from_contract(docx_path)
+        
+        # Extract NACV tiers
+        extracted_terms["nacv_tiers"] = extract_tiers_from_docx(docx_path)
+        
+        # Extract general contract terms
+        doc = Document(docx_path)
+        general_terms = []
+        
+        # Look for common financial terms and values
+        term_patterns = {
+            "fees": r"fee[s]?.*?(\$[\d,]+\.?\d*|[\d,]+\.?\d*\s*(?:bps|bp|basis\s+points?))",
+            "rates": r"rate[s]?.*?(\d+\.?\d*\s*%|\d+\.?\d*\s*(?:bps|bp|basis\s+points?))",
+            "thresholds": r"threshold[s]?.*?(\$[\d,]+\.?\d*|\d+\.?\d*)",
+            "penalties": r"penalty|penalti[ez]s.*?(\$[\d,]+\.?\d*|\d+\.?\d*\s*(?:bps|bp|basis\s+points?))",
+            "minimums": r"minimum[s]?.*?(\$[\d,]+\.?\d*|\d+\.?\d*)",
+            "maximums": r"maximum[s]?.*?(\$[\d,]+\.?\d*|\d+\.?\d*)",
+        }
+        
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if len(text) > 20:  # Only process substantial paragraphs
+                for term_type, pattern in term_patterns.items():
+                    matches = re.finditer(pattern, text.lower())
+                    for match in matches:
+                        general_terms.append({
+                            "type": term_type,
+                            "context": text[:200] + "..." if len(text) > 200 else text,
+                            "value": match.group(1) if match.groups() else None
+                        })
+        
+        extracted_terms["general_terms"] = general_terms
+        
+        # Create extraction summary
+        summary = {
+            "chd_rules_found": extracted_terms["chd_rules"] is not None and extracted_terms["chd_rules"].get("confidence", 0) > 0,
+            "chd_benchmark_found": extracted_terms["chd_benchmark"] is not None,
+            "bir_table_entries": len(extracted_terms["bir_table"]),
+            "nacv_tier_entries": len(extracted_terms["nacv_tiers"]),
+            "general_terms_found": len(extracted_terms["general_terms"]),
+            "total_paragraphs": len(doc.paragraphs),
+            "total_tables": len(doc.tables)
+        }
+        
+        if extracted_terms["chd_rules"]:
+            summary["chd_confidence"] = extracted_terms["chd_rules"].get("confidence", 0)
+            
+        extracted_terms["extraction_summary"] = summary
+        
+    except Exception as e:
+        extracted_terms["error"] = str(e)
+        extracted_terms["extraction_summary"] = {"error": True, "error_message": str(e)}
+    
+    return extracted_terms
+
 # -------------------------
 # Helpers: Excel parsing
 # -------------------------
@@ -757,41 +891,87 @@ def fmt_bps(v: Optional[float]) -> str:
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key")
 
+# Production settings
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Initialize enhanced processor if available
+if ENHANCED_PROCESSING:
+    enhanced_processor = EnhancedDocumentProcessor(fuzzy_threshold=85)
+else:
+    enhanced_processor = None
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        calculation_type = request.form.get("calculation_type", "cv_tier")
-        excel = request.files.get("excel_file")
-        contract = request.files.get("contract_file")
-
-        if not excel or not contract:
-            flash("Please upload both the Excel calculation file and the contract Word file.", "error")
-            return redirect(url_for("index"))
-
-        if not is_excel(excel.filename):
-            flash("The first file must be an Excel file (.xlsx, .xls, .xlsm, .xlsb).", "error")
-            return redirect(url_for("index"))
-        if not is_word(contract.filename):
-            flash("The second file must be a Word file (.docx).", "error")
-            return redirect(url_for("index"))
-
-        upload_dir = os.path.join("uploads")
-        os.makedirs(upload_dir, exist_ok=True)
-        excel_path = os.path.join(upload_dir, secure_filename(excel.filename))
-        contract_path = os.path.join(upload_dir, secure_filename(contract.filename))
-        excel.save(excel_path)
-        contract.save(contract_path)
-
-        try:
-            if calculation_type == "cv_tier":
-                return handle_cv_tier_calculation(excel_path, contract_path, request.form)
-            else:  # nacv_based
-                return handle_nacv_calculation(excel_path, contract_path, request.form)
-        except Exception as e:
-            flash(f"Error: {e}", "error")
+        operation_mode = request.form.get("operation_mode")
+        
+        if operation_mode == "extract_terms":
+            return handle_extract_terms()
+        elif operation_mode == "perform_calculations":
+            return handle_perform_calculations()
+        else:
+            flash("Please select an operation mode.", "error")
             return redirect(url_for("index"))
 
     return render_template("index.html")
+
+def handle_extract_terms():
+    """Handle contract terms extraction"""
+    contract = request.files.get("extract_contract_file")
+    
+    if not contract:
+        flash("Please upload a contract Word file.", "error")
+        return redirect(url_for("index"))
+    
+    if not is_word(contract.filename):
+        flash("The contract file must be a Word file (.docx).", "error")
+        return redirect(url_for("index"))
+    
+    upload_dir = os.path.join("uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    contract_path = os.path.join(upload_dir, secure_filename(contract.filename))
+    contract.save(contract_path)
+    
+    try:
+        # Extract all contract terms
+        extracted_terms = extract_all_contract_terms(contract_path)
+        return render_template("result_extract_terms.html", terms=extracted_terms, filename=contract.filename)
+    except Exception as e:
+        flash(f"Error extracting terms: {e}", "error")
+        return redirect(url_for("index"))
+
+def handle_perform_calculations():
+    """Handle calculation operations"""
+    calculation_type = request.form.get("calculation_type", "cv_tier")
+    excel = request.files.get("excel_file")
+    contract = request.files.get("contract_file")
+
+    if not excel or not contract:
+        flash("Please upload both the Excel calculation file and the contract Word file.", "error")
+        return redirect(url_for("index"))
+
+    if not is_excel(excel.filename):
+        flash("The first file must be an Excel file (.xlsx, .xls, .xlsm, .xlsb).", "error")
+        return redirect(url_for("index"))
+    if not is_word(contract.filename):
+        flash("The second file must be a Word file (.docx).", "error")
+        return redirect(url_for("index"))
+
+    upload_dir = os.path.join("uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    excel_path = os.path.join(upload_dir, secure_filename(excel.filename))
+    contract_path = os.path.join(upload_dir, secure_filename(contract.filename))
+    excel.save(excel_path)
+    contract.save(contract_path)
+
+    try:
+        if calculation_type == "cv_tier":
+            return handle_cv_tier_calculation(excel_path, contract_path, request.form)
+        else:  # nacv_based
+            return handle_nacv_calculation(excel_path, contract_path, request.form)
+    except Exception as e:
+        flash(f"Error: {e}", "error")
+        return redirect(url_for("index"))
 
 def handle_cv_tier_calculation(excel_path: str, contract_path: str, form_data):
     """Handle CV Tier-based calculations"""
@@ -817,7 +997,7 @@ def handle_cv_tier_calculation(excel_path: str, contract_path: str, form_data):
         flash("Could not parse the CHD input value. Please enter a number like 5.46.", "warning")
         chd_input = None
 
-    chd_diff = (None if (chd_input is None or chd_benchmark is None) else (chd_input - chd_benchmark))
+    chd_diff = (None if (chd_input is None or chd_benchmark is None) else (chd_benchmark - chd_input))
 
     # 4) Per-category adjustments
     adjustments = calc_per_tier_adjustments(category_totals, bir_tiers)
@@ -983,4 +1163,5 @@ def healthz():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    debug = os.environ.get("FLASK_ENV", "development") != "production"
+    app.run(host="0.0.0.0", port=port, debug=debug)

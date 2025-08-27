@@ -66,10 +66,37 @@
           {% if chd_rules.threshold_days and chd_rules.adjustment_bps_per_day %}
             <p><strong>Rule:</strong> If CHD Performance ≥ {{ chd_rules.threshold_days }} days, then {{ chd_rules.adjustment_bps_per_day }} bps per day is deducted from Gross Incentive</p>
           {% endif %}
+          
+          {% if chd_rules.confidence %}
+            <p class="help-text">
+              <strong>Extraction Confidence:</strong> {{ "%.0f"|format(chd_rules.confidence * 100) }}%
+              {% if chd_rules.matches_found %}
+                ({{ chd_rules.matches_found }} matches found)
+              {% endif %}
+            </p>
+          {% endif %}
+          
           {% if chd_rules.description %}
             <details>
               <summary>Contract Details</summary>
               <p class="help-text">{{ chd_rules.description }}</p>
+            </details>
+          {% endif %}
+          
+          {% if chd_rules.context_analysis %}
+            <details style="margin-top: 12px;">
+              <summary style="color: #94a3b8;">Enhanced Processing Details</summary>
+              <div style="margin-top: 8px; font-size: 12px;">
+                {% if chd_rules.context_analysis.high_confidence_matches %}
+                  <p>High confidence matches: {{ chd_rules.context_analysis.high_confidence_matches }}</p>
+                {% endif %}
+                {% if chd_rules.context_analysis.avg_match_score %}
+                  <p>Average match score: {{ "%.1f"|format(chd_rules.context_analysis.avg_match_score) }}</p>
+                {% endif %}
+                {% if chd_rules.context_analysis.contexts_analyzed %}
+                  <p>Contexts analyzed: {{ chd_rules.context_analysis.contexts_analyzed }}</p>
+                {% endif %}
+              </div>
             </details>
           {% endif %}
         </div>

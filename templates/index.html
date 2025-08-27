@@ -21,13 +21,46 @@
 
     <form action="{{ url_for('index') }}" method="post" enctype="multipart/form-data" class="card">
       
-      <div class="file-upload-section">
+      <!-- Mode Selection -->
+      <div class="mode-selection-section">
+        <h2>Select Mode</h2>
+        <div class="radio-group">
+          <label class="radio-option" id="extract-terms-mode">
+            <input type="radio" name="operation_mode" value="extract_terms" id="extract-terms-radio">
+            <div class="option-content">
+              <strong>Extract Terms</strong> - Extract contract terms and rules
+              <small>Upload a single Word document to extract all terms, CHD rules, BIR tables, etc.</small>
+            </div>
+          </label>
+          <label class="radio-option" id="perform-calculations-mode">
+            <input type="radio" name="operation_mode" value="perform_calculations" id="perform-calculations-radio">
+            <div class="option-content">
+              <strong>Perform Calculations</strong> - Calculate incentives based on data
+              <small>Upload Excel data and contract to perform CV Tier or NACV calculations</small>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Extract Terms File Upload -->
+      <div class="extract-terms-upload-section" style="display: none;" id="extract-terms-upload">
+        <h2>Upload Contract</h2>
+        <label for="extract_contract_file">Contract Document (.docx)</label>
+        <input type="file" id="extract_contract_file" name="extract_contract_file" accept=".docx">
+        
+        <button type="submit" id="extract-terms-btn" class="analyze-button" disabled>
+          Extract Terms
+        </button>
+      </div>
+
+      <!-- Perform Calculations File Upload -->
+      <div class="calculations-upload-section" style="display: none;" id="calculations-upload">
         <h2>File Uploads</h2>
         <label for="excel_file">Excel calculation file</label>
-        <input type="file" id="excel_file" name="excel_file" accept=".xlsx,.xls,.xlsm,.xlsb" required>
+        <input type="file" id="excel_file" name="excel_file" accept=".xlsx,.xls,.xlsm,.xlsb">
 
         <label for="contract_file">Contract (.docx)</label>
-        <input type="file" id="contract_file" name="contract_file" accept=".docx" required>
+        <input type="file" id="contract_file" name="contract_file" accept=".docx">
         
         <button type="button" id="analyze-btn" class="analyze-button" disabled>
           <span class="analyze-text">Analyze Files</span>
@@ -74,8 +107,8 @@
       </div>
 
       <div class="chd-section" style="display: none;" id="chd-section">
-        <h2>CHD Performance (Optional)</h2>
-        <label for="chd_value">CHD Performance value</label>
+        <h2>CHD Adjustment (Actual) (Optional)</h2>
+        <label for="chd_value">CHD Adjustment (Actual) value</label>
         <input type="number" step="0.01" id="chd_value" name="chd_value" placeholder="e.g., 5.46 or 15.5">
         <small class="help-text">For CV Tier: displays CHD benchmark vs input. For NACV: applies CHD adjustments per contract rules.</small>
       </div>
@@ -89,7 +122,15 @@
   </div>
 
   <script>
-    // Auto-detection functionality
+    // Mode selection functionality
+    const extractTermsRadio = document.getElementById('extract-terms-radio');
+    const performCalculationsRadio = document.getElementById('perform-calculations-radio');
+    const extractTermsUpload = document.getElementById('extract-terms-upload');
+    const calculationsUpload = document.getElementById('calculations-upload');
+    const extractTermsBtn = document.getElementById('extract-terms-btn');
+    const extractContractFile = document.getElementById('extract_contract_file');
+    
+    // Calculation mode elements
     const excelFile = document.getElementById('excel_file');
     const contractFile = document.getElementById('contract_file');
     const analyzeBtn = document.getElementById('analyze-btn');
@@ -98,8 +139,44 @@
     const chdSection = document.getElementById('chd-section');
     const detectionResult = document.getElementById('detection-result');
     
-    // Enable analyze button when both files are selected
+    // Mode selection handlers
+    function handleModeSelection() {
+      if (extractTermsRadio.checked) {
+        // Show extract terms upload section
+        extractTermsUpload.style.display = 'block';
+        calculationsUpload.style.display = 'none';
+        
+        // Hide calculation-specific sections
+        calculationTypeSection.style.display = 'none';
+        chdSection.style.display = 'none';
+        processBtn.style.display = 'none';
+        detectionResult.style.display = 'none';
+        
+      } else if (performCalculationsRadio.checked) {
+        // Show calculations upload section
+        extractTermsUpload.style.display = 'none';
+        calculationsUpload.style.display = 'block';
+        
+        // Reset file inputs
+        checkFilesSelected();
+      }
+    }
+    
+    extractTermsRadio.addEventListener('change', handleModeSelection);
+    performCalculationsRadio.addEventListener('change', handleModeSelection);
+    
+    // Extract terms file validation
+    function checkExtractTermsFile() {
+      const fileSelected = extractContractFile.files.length > 0;
+      extractTermsBtn.disabled = !fileSelected;
+    }
+    
+    extractContractFile.addEventListener('change', checkExtractTermsFile);
+    
+    // Enable analyze button when both files are selected (calculation mode)
     function checkFilesSelected() {
+      if (!excelFile || !contractFile || !analyzeBtn) return;
+      
       const bothSelected = excelFile.files.length > 0 && contractFile.files.length > 0;
       analyzeBtn.disabled = !bothSelected;
       
@@ -112,45 +189,49 @@
       }
     }
     
-    excelFile.addEventListener('change', checkFilesSelected);
-    contractFile.addEventListener('change', checkFilesSelected);
+    if (excelFile && contractFile) {
+      excelFile.addEventListener('change', checkFilesSelected);
+      contractFile.addEventListener('change', checkFilesSelected);
+    }
     
-    // Analyze files
-    analyzeBtn.addEventListener('click', async function() {
-      const analyzeText = document.querySelector('.analyze-text');
-      const analyzeSpinner = document.querySelector('.analyze-spinner');
-      
-      // Show spinner
-      analyzeText.style.display = 'none';
-      analyzeSpinner.style.display = 'inline';
-      analyzeBtn.disabled = true;
-      
-      try {
-        const formData = new FormData();
-        formData.append('excel_file', excelFile.files[0]);
-        formData.append('contract_file', contractFile.files[0]);
+    // Analyze files (calculation mode)
+    if (analyzeBtn) {
+      analyzeBtn.addEventListener('click', async function() {
+        const analyzeText = document.querySelector('.analyze-text');
+        const analyzeSpinner = document.querySelector('.analyze-spinner');
         
-        const response = await fetch('/analyze-files', {
-          method: 'POST',
-          body: formData
-        });
+        // Show spinner
+        analyzeText.style.display = 'none';
+        analyzeSpinner.style.display = 'inline';
+        analyzeBtn.disabled = true;
         
-        const result = await response.json();
-        
-        if (result.success) {
-          displayDetectionResult(result.detection, result.contract_validation);
-        } else {
-          showError(result.error);
+        try {
+          const formData = new FormData();
+          formData.append('excel_file', excelFile.files[0]);
+          formData.append('contract_file', contractFile.files[0]);
+          
+          const response = await fetch('/analyze-files', {
+            method: 'POST',
+            body: formData
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            displayDetectionResult(result.detection, result.contract_validation);
+          } else {
+            showError(result.error);
+          }
+        } catch (error) {
+          showError('Analysis failed: ' + error.message);
+        } finally {
+          // Hide spinner
+          analyzeText.style.display = 'inline';
+          analyzeSpinner.style.display = 'none';
+          analyzeBtn.disabled = false;
         }
-      } catch (error) {
-        showError('Analysis failed: ' + error.message);
-      } finally {
-        // Hide spinner
-        analyzeText.style.display = 'inline';
-        analyzeSpinner.style.display = 'none';
-        analyzeBtn.disabled = false;
-      }
-    });
+      });
+    }
     
     function displayDetectionResult(detection, contractValidation) {
       // Show sections
