@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Extracted Terms — Contract Analysis</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Contract Terms Extraction</h1>
+    <p class="muted">Extracted from: <strong>{{ terms.filename }}</strong></p>
+
+    {% if terms.error %}
+    <section class="card">
+      <h2 style="color: #ef4444;">Extraction Error</h2>
+      <p>{{ terms.error }}</p>
+    </section>
+    {% else %}
+
+    <!-- Extraction Summary -->
+    <section class="card">
+      <h2>Extraction Summary</h2>
+      <div class="grid two">
+        <div>
+          <ul style="list-style: none; padding: 0;">
+            <li>📄 Total Paragraphs: <strong>{{ terms.extraction_summary.total_paragraphs or 0 }}</strong></li>
+            <li>📋 Total Tables: <strong>{{ terms.extraction_summary.total_tables or 0 }}</strong></li>
+            <li>⚖️ General Terms: <strong>{{ terms.extraction_summary.general_terms_found or 0 }}</strong></li>
+          </ul>
+        </div>
+        <div>
+          <ul style="list-style: none; padding: 0;">
+            <li>🎯 CHD Rules: <strong>{{ "✅ Found" if terms.extraction_summary.chd_rules_found else "❌ Not Found" }}</strong></li>
+            <li>📊 CHD Benchmark: <strong>{{ "✅ Found" if terms.extraction_summary.chd_benchmark_found else "❌ Not Found" }}</strong></li>
+            <li>📈 BIR Table Entries: <strong>{{ terms.extraction_summary.bir_table_entries or 0 }}</strong></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHD Rules -->
+    {% if terms.chd_rules and terms.chd_rules.threshold_days %}
+    <section class="card">
+      <h2>CHD (Client Held Days) Rules</h2>
+      <div style="background: #1e293b; padding: 16px; border-radius: 8px; margin: 12px 0;">
+        <h3 style="margin-top: 0; color: #60a5fa;">Rule Details</h3>
+        <ul>
+          {% if terms.chd_rules.threshold_days %}
+          <li><strong>Threshold:</strong> {{ terms.chd_rules.threshold_days }} days or more</li>
+          {% endif %}
+          {% if terms.chd_rules.adjustment_bps_per_day %}
+          <li><strong>Adjustment:</strong> {{ terms.chd_rules.adjustment_bps_per_day }} bps per day</li>
+          {% endif %}
+          {% if terms.chd_rules.adjustment_type %}
+          <li><strong>Type:</strong> {{ terms.chd_rules.adjustment_type.title() }}</li>
+          {% endif %}
+          {% if terms.chd_rules.confidence %}
+          <li><strong>Extraction Confidence:</strong> {{ "%.0f"|format(terms.chd_rules.confidence * 100) }}%</li>
+          {% endif %}
+        </ul>
+        
+        {% if terms.chd_rules.description %}
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer; color: #94a3b8;">Full Contract Text</summary>
+          <p style="margin-top: 8px; color: #d1d5db; font-size: 13px; line-height: 1.4;">{{ terms.chd_rules.description }}</p>
+        </details>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- CHD Benchmark -->
+    {% if terms.chd_benchmark %}
+    <section class="card">
+      <h2>CHD Benchmark</h2>
+      <p class="big" style="color: #38d39f;">{{ terms.chd_benchmark }}</p>
+      <p class="muted">Extracted benchmark value from contract</p>
+    </section>
+    {% endif %}
+
+    <!-- BIR Table -->
+    {% if terms.bir_table and terms.bir_table|length > 0 %}
+    <section class="card">
+      <h2>BIR (Basis Interest Rate) Table</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>NACV Range (USD MM)</th>
+            <th>BIR (bp)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in terms.bir_table %}
+          <tr>
+            <td>
+              {{ "%.1f"|format(entry.lower_m) }}M
+              {% if entry.upper_m %}
+                - {{ "%.1f"|format(entry.upper_m) }}M
+              {% else %}
+                +
+              {% endif %}
+            </td>
+            <td class="num">{{ "%.1f"|format(entry.bps) }} bps</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <!-- NACV Tiers -->
+    {% if terms.nacv_tiers and terms.nacv_tiers|length > 0 %}
+    <section class="card">
+      <h2>NACV Tier Rules</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Tier Range (GBP MM)</th>
+            <th>Rate (bps)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tier in terms.nacv_tiers %}
+          <tr>
+            <td>
+              {{ "%.1f"|format(tier.lower_m) }}M
+              {% if tier.upper_m %}
+                - {{ "%.1f"|format(tier.upper_m) }}M
+              {% else %}
+                +
+              {% endif %}
+            </td>
+            <td class="num">{{ "%.1f"|format(tier.bps) }} bps</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <!-- General Terms -->
+    {% if terms.general_terms and terms.general_terms|length > 0 %}
+    <section class="card">
+      <h2>General Contract Terms</h2>
+      
+      {% set term_groups = terms.general_terms | groupby('type') %}
+      {% for term_type, group_terms in term_groups %}
+      <div style="margin-bottom: 20px;">
+        <h3 style="text-transform: capitalize; color: #94a3b8; font-size: 16px; margin-bottom: 8px;">{{ term_type.replace('_', ' ') }}</h3>
+        {% for term in group_terms %}
+        <div style="background: #0f1426; border: 1px solid #1e2741; border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+          {% if term.value %}
+          <div style="color: #60a5fa; font-weight: 600; margin-bottom: 4px;">Value: {{ term.value }}</div>
+          {% endif %}
+          <div style="font-size: 13px; color: #d1d5db; line-height: 1.4;">{{ term.context }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if not terms.chd_rules and not terms.chd_benchmark and not terms.bir_table and not terms.nacv_tiers and (not terms.general_terms or terms.general_terms|length == 0) %}
+    <section class="card">
+      <h2>No Terms Found</h2>
+      <p class="muted">No recognizable contract terms were extracted from this document. This could mean:</p>
+      <ul class="muted">
+        <li>The document doesn't contain standard financial contract terms</li>
+        <li>The terms are formatted differently than expected</li>
+        <li>The document might be corrupted or in an unexpected format</li>
+      </ul>
+    </section>
+    {% endif %}
+
+    {% endif %}
+
+    <p><a href="{{ url_for('index') }}" class="button">← Back to Upload</a></p>
+  </div>
+</body>
+</html>
